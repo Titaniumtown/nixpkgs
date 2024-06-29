@@ -26880,6 +26880,7 @@ with pkgs;
     ubootTuringRK1
     ubootUtilite
     ubootWandboard
+    ubootJ784S4A72
     ;
 
   # Upstream Barebox:

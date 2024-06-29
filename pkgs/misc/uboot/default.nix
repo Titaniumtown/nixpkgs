@@ -20,10 +20,12 @@
 , armTrustedFirmwareAllwinner
 , armTrustedFirmwareAllwinnerH6
 , armTrustedFirmwareAllwinnerH616
+, armTrustedFirmwareJ784S4
 , armTrustedFirmwareRK3328
 , armTrustedFirmwareRK3399
 , armTrustedFirmwareRK3588
 , armTrustedFirmwareS905
+, ti-firmware
 , buildPackages
 }:
 
@@ -656,5 +658,13 @@ in {
     extraMeta.platforms = ["aarch64-linux"];
     BL31 = "${armTrustedFirmwareRK3399}/bl31.elf";
     filesToInstall = [ "u-boot.itb" "idbloader.img"];
+  };
+
+  ubootJ784S4A72 = buildUBoot {
+    defconfig = "j784s4_evm_a72_defconfig";
+    extraMeta.platforms = ["aarch64-linux"];
+    extraMakeFlags = ["BINMAN_INDIRS=${ti-firmware}/lib/firmware"];
+    BL31 = "${armTrustedFirmwareJ784S4}/bl31.bin";
+    filesToInstall = ["u-boot.img" "tispl.bin" "u-boot.img_unsigned" "tispl.bin_unsigned"];
   };
 }
