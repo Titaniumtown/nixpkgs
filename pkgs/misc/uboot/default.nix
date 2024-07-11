@@ -87,6 +87,9 @@ let
         p.libfdt
         p.setuptools # for pkg_resources
         p.pyelftools
+        p.pyyaml
+        p.yamllint
+        p.jsonschema
       ]))
       swig
       which # for scripts/dtc-version.sh
@@ -666,5 +669,12 @@ in {
     extraMakeFlags = ["BINMAN_INDIRS=${ti-firmware}/lib/firmware"];
     BL31 = "${armTrustedFirmwareJ784S4}/bl31.bin";
     filesToInstall = ["u-boot.img" "tispl.bin" "u-boot.img_unsigned" "tispl.bin_unsigned"];
+  };
+
+  ubootJ784S4R5 = buildUBoot {
+    defconfig = "j784s4_evm_r5_defconfig";
+    extraMeta.platforms = ["armv7l-linux"];
+    extraMakeFlags = ["BINMAN_INDIRS=${ti-firmware}/lib/firmware"];
+    filesToInstall = ["tiboot3-j784s4-gp-evm.bin" "tiboot3-j784s4-hs-fs-evm.bin" "tiboot3-j784s4-hs-evm.bin"];
   };
 }

@@ -26881,6 +26881,7 @@ with pkgs;
     ubootUtilite
     ubootWandboard
     ubootJ784S4A72
+    ubootJ784S4R5
     ;
 
   # Upstream Barebox:
