@@ -82,18 +82,9 @@
     };
   };
 
-  # Try to find an architecture compatible with our current system. We
-  # just try every bootstrap we’ve got and test to see if it is
-  # compatible with or current architecture.
-  getCompatibleTools = lib.foldl (v: system:
-    if v != null then v
-    else if localSystem.canExecute (lib.systems.elaborate { inherit system; }) then archLookupTable.${system}
-    else null) null (lib.attrNames archLookupTable);
-
   archLookupTable = table.${localSystem.libc}
     or (throw "unsupported libc for the pure Linux stdenv");
-  files = archLookupTable.${localSystem.system} or (if getCompatibleTools != null then getCompatibleTools
-    else (throw "unsupported platform for the pure Linux stdenv"));
+  files = archLookupTable.${localSystem.system};
   in files
 }:
 
