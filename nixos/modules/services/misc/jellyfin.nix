@@ -26,8 +26,10 @@ let
     bool
     enum
     ints
+    listOf
     nullOr
     path
+    port
     str
     submodule
     ;
@@ -68,6 +70,41 @@ let
     </EncodingOptions>
   '';
   encodingXmlFile = pkgs.writeText "encoding.xml" encodingXmlText;
+  stringListToXml =
+    tag: items:
+    if items == [ ] then
+      "<${tag} />"
+    else
+      "<${tag}>\n    ${
+        concatMapStringsSep "\n    " (item: "<string>${escapeXML item}</string>") items
+      }\n  </${tag}>";
+  networkXmlText = ''
+    <?xml version="1.0" encoding="utf-8"?>
+    <NetworkConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+      <BaseUrl>${escapeXML cfg.network.baseUrl}</BaseUrl>
+      <EnableHttps>${boolToString cfg.network.enableHttps}</EnableHttps>
+      <RequireHttps>${boolToString cfg.network.requireHttps}</RequireHttps>
+      <InternalHttpPort>${toString cfg.network.internalHttpPort}</InternalHttpPort>
+      <InternalHttpsPort>${toString cfg.network.internalHttpsPort}</InternalHttpsPort>
+      <PublicHttpPort>${toString cfg.network.publicHttpPort}</PublicHttpPort>
+      <PublicHttpsPort>${toString cfg.network.publicHttpsPort}</PublicHttpsPort>
+      <AutoDiscovery>${boolToString cfg.network.autoDiscovery}</AutoDiscovery>
+      <EnableUPnP>${boolToString cfg.network.enableUPnP}</EnableUPnP>
+      <EnableIPv4>${boolToString cfg.network.enableIPv4}</EnableIPv4>
+      <EnableIPv6>${boolToString cfg.network.enableIPv6}</EnableIPv6>
+      <EnableRemoteAccess>${boolToString cfg.network.enableRemoteAccess}</EnableRemoteAccess>
+      ${stringListToXml "LocalNetworkSubnets" cfg.network.localNetworkSubnets}
+      ${stringListToXml "LocalNetworkAddresses" cfg.network.localNetworkAddresses}
+      ${stringListToXml "KnownProxies" cfg.network.knownProxies}
+      <IgnoreVirtualInterfaces>${boolToString cfg.network.ignoreVirtualInterfaces}</IgnoreVirtualInterfaces>
+      ${stringListToXml "VirtualInterfaceNames" cfg.network.virtualInterfaceNames}
+      <EnablePublishedServerUriByRequest>${boolToString cfg.network.enablePublishedServerUriByRequest}</EnablePublishedServerUriByRequest>
+      ${stringListToXml "PublishedServerUriBySubnet" cfg.network.publishedServerUriBySubnet}
+      ${stringListToXml "RemoteIPFilter" cfg.network.remoteIPFilter}
+      <IsRemoteIPFilterBlacklist>${boolToString cfg.network.isRemoteIPFilterBlacklist}</IsRemoteIPFilterBlacklist>
+    </NetworkConfiguration>
+  '';
+  networkXmlFile = pkgs.writeText "network.xml" networkXmlText;
   codecListToType =
     desc: list:
     submodule {
@@ -200,6 +237,196 @@ in
           :::
 
           When disabled (the default), the encoding configuration is only written if no `encoding.xml`
+          exists yet. This allows settings to be changed through Jellyfin's web dashboard and persist
+          across restarts, but means the NixOS configuration options will be ignored after the initial setup.
+        '';
+      };
+
+      network = {
+        baseUrl = mkOption {
+          type = str;
+          default = "";
+          example = "/jellyfin";
+          description = ''
+            Prefix added to Jellyfin's internal URLs when it sits behind a reverse proxy at a sub-path.
+            Leave empty when Jellyfin is served at the root of its host.
+          '';
+        };
+
+        enableHttps = mkOption {
+          type = bool;
+          default = false;
+          description = ''
+            Serve HTTPS directly from Jellyfin. Usually unnecessary when terminating TLS in a reverse proxy.
+          '';
+        };
+
+        requireHttps = mkOption {
+          type = bool;
+          default = false;
+          description = ''
+            Redirect plaintext HTTP requests to HTTPS. Only meaningful when {option}`enableHttps` is true.
+          '';
+        };
+
+        internalHttpPort = mkOption {
+          type = port;
+          default = 8096;
+          description = "TCP port Jellyfin binds for HTTP.";
+        };
+
+        internalHttpsPort = mkOption {
+          type = port;
+          default = 8920;
+          description = "TCP port Jellyfin binds for HTTPS. Only used when {option}`enableHttps` is true.";
+        };
+
+        publicHttpPort = mkOption {
+          type = port;
+          default = 8096;
+          description = "HTTP port Jellyfin advertises in server discovery responses and published URIs.";
+        };
+
+        publicHttpsPort = mkOption {
+          type = port;
+          default = 8920;
+          description = "HTTPS port Jellyfin advertises in server discovery responses and published URIs.";
+        };
+
+        autoDiscovery = mkOption {
+          type = bool;
+          default = true;
+          description = "Respond to LAN client auto-discovery broadcasts (UDP 7359).";
+        };
+
+        enableUPnP = mkOption {
+          type = bool;
+          default = false;
+          description = "Attempt to open the public ports on the router via UPnP.";
+        };
+
+        enableIPv4 = mkOption {
+          type = bool;
+          default = true;
+          description = "Listen on IPv4.";
+        };
+
+        enableIPv6 = mkOption {
+          type = bool;
+          default = true;
+          description = "Listen on IPv6.";
+        };
+
+        enableRemoteAccess = mkOption {
+          type = bool;
+          default = true;
+          description = ''
+            Allow connections from clients outside the subnets listed in {option}`localNetworkSubnets`.
+            When false, Jellyfin rejects non-local requests regardless of reverse proxy configuration.
+          '';
+        };
+
+        localNetworkSubnets = mkOption {
+          type = listOf str;
+          default = [ ];
+          example = [
+            "192.168.1.0/24"
+            "10.0.0.0/8"
+          ];
+          description = ''
+            CIDR ranges (or bare IPs) that Jellyfin classifies as the local network.
+            Clients originating from these ranges -- as seen after {option}`knownProxies` X-Forwarded-For
+            unwrapping -- are not subject to {option}`services.jellyfin` remote-client bitrate limits.
+          '';
+        };
+
+        localNetworkAddresses = mkOption {
+          type = listOf str;
+          default = [ ];
+          example = [ "192.168.1.50" ];
+          description = ''
+            Specific interface addresses Jellyfin binds to. Leave empty to bind all interfaces.
+          '';
+        };
+
+        knownProxies = mkOption {
+          type = listOf str;
+          default = [ ];
+          example = [ "127.0.0.1" ];
+          description = ''
+            Addresses of reverse proxies trusted to forward the real client IP via `X-Forwarded-For`.
+            Without this, Jellyfin sees the proxy's address for every request and cannot apply
+            {option}`localNetworkSubnets` classification to the true client.
+          '';
+        };
+
+        ignoreVirtualInterfaces = mkOption {
+          type = bool;
+          default = true;
+          description = "Skip virtual network interfaces (matching {option}`virtualInterfaceNames`) during auto-bind.";
+        };
+
+        virtualInterfaceNames = mkOption {
+          type = listOf str;
+          default = [ "veth" ];
+          description = "Interface name prefixes treated as virtual when {option}`ignoreVirtualInterfaces` is true.";
+        };
+
+        enablePublishedServerUriByRequest = mkOption {
+          type = bool;
+          default = false;
+          description = ''
+            Derive the server's public URI from the incoming request's Host header instead of any
+            configured {option}`publishedServerUriBySubnet` entry.
+          '';
+        };
+
+        publishedServerUriBySubnet = mkOption {
+          type = listOf str;
+          default = [ ];
+          example = [ "192.168.1.0/24=http://jellyfin.lan:8096" ];
+          description = ''
+            Per-subnet overrides for the URI Jellyfin advertises to clients, in `subnet=uri` form.
+          '';
+        };
+
+        remoteIPFilter = mkOption {
+          type = listOf str;
+          default = [ ];
+          example = [ "203.0.113.0/24" ];
+          description = ''
+            IPs or CIDRs used as the allow- or denylist for remote access.
+            Behaviour is controlled by {option}`isRemoteIPFilterBlacklist`.
+          '';
+        };
+
+        isRemoteIPFilterBlacklist = mkOption {
+          type = bool;
+          default = false;
+          description = ''
+            When true, {option}`remoteIPFilter` is a denylist; when false, it is an allowlist
+            (and an empty list allows all remote addresses).
+          '';
+        };
+      };
+
+      forceNetworkConfig = mkOption {
+        type = bool;
+        default = false;
+        description = ''
+          Whether to overwrite Jellyfin's `network.xml` configuration file on each service start.
+
+          When enabled, the network configuration specified in {option}`services.jellyfin.network`
+          is applied on every service restart. A backup of the existing `network.xml` will be
+          created at `network.xml.backup-$timestamp`.
+
+          ::: {.warning}
+          Enabling this option means that any changes made to networking settings through
+          Jellyfin's web dashboard will be lost on the next service restart. The NixOS configuration
+          becomes the single source of truth for network settings.
+          :::
+
+          When disabled (the default), the network configuration is only written if no `network.xml`
           exists yet. This allows settings to be changed through Jellyfin's web dashboard and persist
           across restarts, but means the NixOS configuration options will be ignored after the initial setup.
         '';
@@ -384,46 +611,50 @@ in
         wants = [ "network-online.target" ];
         wantedBy = [ "multi-user.target" ];
 
-        preStart = mkIf cfg.hardwareAcceleration.enable (
-          ''
-            configDir=${escapeShellArg cfg.configDir}
-            encodingXml="$configDir/encoding.xml"
-          ''
-          + (
-            if cfg.forceEncodingConfig then
-              ''
-                if [[ -e $encodingXml ]]; then
+        preStart =
+          let
+            # manage_config_xml <source> <destination> <force> <description>
+            #
+            # Installs a NixOS-declared XML config at <destination>, preserving
+            # any existing file as a timestamped backup when <force> is true.
+            # With <force>=false, leaves existing files untouched and warns if
+            # the on-disk content differs from the declared content.
+            helper = ''
+              manage_config_xml() {
+                local src="$1" dest="$2" force="$3" desc="$4"
+                if [[ -e "$dest" ]]; then
                   # this intentionally removes trailing newlines
-                  currentText="$(<"$encodingXml")"
-                  configuredText="$(<${encodingXmlFile})"
-                  if [[ $currentText == "$configuredText" ]]; then
-                    # don't need to do anything
-                    exit 0
+                  local currentText configuredText
+                  currentText="$(<"$dest")"
+                  configuredText="$(<"$src")"
+                  if [[ "$currentText" == "$configuredText" ]]; then
+                    return 0
+                  fi
+                  if [[ "$force" == true ]]; then
+                    local backup
+                    backup="$dest.backup-$(date -u +"%FT%H_%M_%SZ")"
+                    mv --update=none-fail -T "$dest" "$backup"
                   else
-                    encodingXmlBackup="$configDir/encoding.xml.backup-$(date -u +"%FT%H_%M_%SZ")"
-                    mv --update=none-fail -T "$encodingXml" "$encodingXmlBackup"
+                    echo "WARN: $dest already exists and is different from the configured settings. $desc options NOT applied." >&2
+                    echo "WARN: Set the corresponding force*Config option to override." >&2
+                    return 0
                   fi
                 fi
-                cp --update=none-fail -T ${encodingXmlFile} "$encodingXml"
-                chmod u+w "$encodingXml"
-              ''
-            else
-              ''
-                if [[ -e $encodingXml ]]; then
-                  # this intentionally removes trailing newlines
-                  currentText="$(<"$encodingXml")"
-                  configuredText="$(<${encodingXmlFile})"
-                  if [[ $currentText != "$configuredText" ]]; then
-                    echo "WARN: $encodingXml already exists and is different from the configured settings. transcoding options NOT applied." >&2
-                    echo "WARN: Set config.services.jellyfin.forceEncodingConfig = true to override." >&2
-                  fi
-                else
-                  cp --update=none-fail -T ${encodingXmlFile} "$encodingXml"
-                  chmod u+w "$encodingXml"
-                fi
-              ''
-          )
-        );
+                cp --update=none-fail -T "$src" "$dest"
+                chmod u+w "$dest"
+              }
+              configDir=${escapeShellArg cfg.configDir}
+            '';
+          in
+          (
+            helper
+            + optionalString cfg.hardwareAcceleration.enable ''
+              manage_config_xml ${encodingXmlFile} "$configDir/encoding.xml" ${boolToString cfg.forceEncodingConfig} transcoding
+            ''
+            + ''
+              manage_config_xml ${networkXmlFile} "$configDir/network.xml" ${boolToString cfg.forceNetworkConfig} network
+            ''
+          );
 
         # This is mostly follows: https://github.com/jellyfin/jellyfin/blob/master/fedora/jellyfin.service
         # Upstream also disable some hardenings when running in LXC, we do the same with the isContainer option

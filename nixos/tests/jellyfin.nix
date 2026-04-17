@@ -63,6 +63,26 @@
       environment.systemPackages = with pkgs; [ ffmpeg ];
       virtualisation.diskSize = 3 * 1024;
     };
+
+    machineWithNetworkConfig = {
+      services.jellyfin = {
+        enable = true;
+        forceNetworkConfig = true;
+        network = {
+          localNetworkSubnets = [
+            "192.168.1.0/24"
+            "10.0.0.0/8"
+          ];
+          knownProxies = [ "127.0.0.1" ];
+          enableUPnP = false;
+          enableIPv6 = false;
+          remoteIPFilter = [ "203.0.113.5" ];
+          isRemoteIPFilterBlacklist = true;
+        };
+      };
+      environment.systemPackages = with pkgs; [ ffmpeg ];
+      virtualisation.diskSize = 3 * 1024;
+    };
   };
 
   # Documentation of the Jellyfin API: https://api.jellyfin.org/
@@ -121,6 +141,36 @@
 
           # Verify the new encoding.xml does not have the marker (was overwritten)
           machineWithForceConfig.fail("grep -q 'MARKER' /var/lib/jellyfin/config/encoding.xml")
+
+      # Test forceNetworkConfig and network.xml generation
+      with subtest("Force network config writes declared values and backs up on overwrite"):
+          wait_for_jellyfin(machineWithNetworkConfig)
+
+          # Verify network.xml exists and contains the declared values
+          machineWithNetworkConfig.succeed("test -f /var/lib/jellyfin/config/network.xml")
+          machineWithNetworkConfig.succeed("grep -F '<string>192.168.1.0/24</string>' /var/lib/jellyfin/config/network.xml")
+          machineWithNetworkConfig.succeed("grep -F '<string>10.0.0.0/8</string>' /var/lib/jellyfin/config/network.xml")
+          machineWithNetworkConfig.succeed("grep -F '<string>127.0.0.1</string>' /var/lib/jellyfin/config/network.xml")
+          machineWithNetworkConfig.succeed("grep -F '<string>203.0.113.5</string>' /var/lib/jellyfin/config/network.xml")
+          machineWithNetworkConfig.succeed("grep -F '<IsRemoteIPFilterBlacklist>true</IsRemoteIPFilterBlacklist>' /var/lib/jellyfin/config/network.xml")
+          machineWithNetworkConfig.succeed("grep -F '<EnableIPv6>false</EnableIPv6>' /var/lib/jellyfin/config/network.xml")
+          machineWithNetworkConfig.succeed("grep -F '<EnableUPnP>false</EnableUPnP>' /var/lib/jellyfin/config/network.xml")
+
+          # Stop service before modifying config
+          machineWithNetworkConfig.succeed("systemctl stop jellyfin.service")
+
+          # Plant a marker so we can prove the backup-and-overwrite path runs
+          machineWithNetworkConfig.succeed("echo '<!-- NETMARKER -->' > /var/lib/jellyfin/config/network.xml")
+
+          # Restart the service to trigger the backup
+          machineWithNetworkConfig.succeed("systemctl restart jellyfin.service")
+          wait_for_jellyfin(machineWithNetworkConfig)
+
+          # Verify the marked content was preserved as a timestamped backup
+          machineWithNetworkConfig.succeed("grep -q 'NETMARKER' /var/lib/jellyfin/config/network.xml.backup-*")
+
+          # Verify the new network.xml does not have the marker (was overwritten)
+          machineWithNetworkConfig.fail("grep -q 'NETMARKER' /var/lib/jellyfin/config/network.xml")
 
       auth_header = 'MediaBrowser Client="NixOS Integration Tests", DeviceId="1337", Device="Apple II", Version="20.09"'
 
